@@ -1,14 +1,30 @@
 // Load environment variables
-require('dotenv').config({ path: './config.env' });
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const path = require('path');
+const fs = require('fs');
+
+// Try to load .env.{NODE_ENV}, .env, or config.env
+const envFiles = [
+  `.env.${NODE_ENV}`,
+  '.env',
+  'config.env'
+];
+
+for (const envFile of envFiles) {
+  const envPath = path.resolve(__dirname, envFile);
+  if (fs.existsSync(envPath)) {
+    require('dotenv').config({ path: envPath });
+    break;
+  }
+}
 
 const mongoose = require('mongoose');
 const app = require('./app');
 
 const PORT = process.env.PORT || 5000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Validate required environment variables
-const requiredEnvVars = ['DB_URI'];
+const requiredEnvVars = ['DB_URI', 'JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
@@ -68,9 +84,9 @@ const connectDB = async (retryCount = 0, maxRetries = 5) => {
     if (error.message.includes('IP that isn\'t whitelisted')) {
       console.error('\n🔧 SOLUTION: Add your IP to Atlas Network Access.');
     } else if (error.message.includes('authentication failed')) {
-      console.error('\n🔧 SOLUTION: Check your username/password in config.env');
+      console.error('\n🔧 SOLUTION: Check your username/password in environment variables');
     } else if (error.message.includes('ENOTFOUND')) {
-      console.error('\n🔧 SOLUTION: Verify your cluster URI in config.env');
+      console.error('\n🔧 SOLUTION: Verify your cluster URI in environment variables');
     } else if (error.message.includes('ECONNREFUSED')) {
       console.error('\n🔧 SOLUTION: Local MongoDB may not be running.');
     }
