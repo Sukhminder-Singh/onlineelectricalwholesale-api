@@ -1,22 +1,11 @@
 // Load environment variables
-const NODE_ENV = process.env.NODE_ENV || 'development';
 const path = require('path');
-const fs = require('fs');
-
-// Try to load .env.{NODE_ENV}, .env, or config.env
-const envFiles = [
-  `.env.${NODE_ENV}`,
-  '.env',
-  'config.env'
-];
-
-for (const envFile of envFiles) {
-  const envPath = path.resolve(__dirname, envFile);
-  if (fs.existsSync(envPath)) {
-    require('dotenv').config({ path: envPath });
-    break;
-  }
-}
+const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : 'config.env';
+require('dotenv').config({ path: path.resolve(__dirname, envFile) });
+// Startup diagnostics to confirm environment loading
+console.log(`[Env] Loaded ${envFile} for NODE_ENV=${process.env.NODE_ENV}`);
+console.log(`[Env] PORT=${process.env.PORT}`);
+console.log(`[Env] ALLOWED_ORIGINS=${process.env.ALLOWED_ORIGINS}`);
 
 const mongoose = require('mongoose');
 const app = require('./app');
@@ -66,7 +55,7 @@ const connectDB = async (retryCount = 0, maxRetries = 5) => {
         deprecationErrors: true,
       };
       // Only allow invalid certificates in development
-      if (NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === 'development') {
         mongooseOptions.tls = true;
         mongooseOptions.tlsAllowInvalidCertificates = true;
         console.warn('⚠️ TLS certificate validation disabled (development mode)');
@@ -164,7 +153,7 @@ const startServer = async () => {
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
       console.log(`📊 API available at http://<your-server-ip>:${PORT}/api`);
-      console.log(`🌍 Environment: ${NODE_ENV}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
       console.log(`📅 Started at: ${new Date().toISOString()}`);
     });
 

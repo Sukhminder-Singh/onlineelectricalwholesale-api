@@ -43,20 +43,75 @@ const xssProtection = (req, res, next) => {
   next();
 };
 
+// CORS debugging middleware
+exports.corsDebugger = (req, res, next) => {
+  const origin = req.headers.origin;
+  const method = req.method;
+  const path = req.path;
+  
+  console.log(`\n🌐 CORS Debug Info:`);
+  console.log(`   Method: ${method}`);
+  console.log(`   Path: ${path}`);
+  console.log(`   Origin: ${origin || 'None'}`);
+  console.log(`   Host: ${req.headers.host}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']}`);
+  console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
+  console.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'Not set'}`);
+  
+  // Log preflight requests
+  if (method === 'OPTIONS') {
+    console.log(`🔍 Preflight request detected`);
+    console.log(`   Access-Control-Request-Method: ${req.headers['access-control-request-method']}`);
+    console.log(`   Access-Control-Request-Headers: ${req.headers['access-control-request-headers']}`);
+  }
+  
+  next();
+};
+
 // Security middleware configuration
 exports.securityMiddleware = [
   // Set security HTTP headers
   helmet(),
 
-  // Enable CORS
+  // Enable CORS with dynamic origin validation
   cors({
-    origin: process.env.ALLOWED_ORIGINS ? 
-      process.env.ALLOWED_ORIGINS.split(',') : 
-      ['http://localhost:3000', 'http://localhost:3001'],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
+        process.env.ALLOWED_ORIGINS.split(',').map(orig => orig.trim()) : 
+        ['http://localhost:3000', 'http://localhost:5000'];
+      
+      // Check if the origin is allowed
+      const isAllowed = allowedOrigins.some(allowedOrigin => {
+        // Handle exact matches
+        if (allowedOrigin === origin) return true;
+        
+        // Handle wildcard subdomains
+        if (allowedOrigin.includes('*')) {
+          const pattern = allowedOrigin.replace('*', '.*');
+          const regex = new RegExp(pattern);
+          return regex.test(origin);
+        }
+        
+        return false;
+      });
+      
+      if (isAllowed) {
+        console.log(`✅ CORS: Allowing origin: ${origin}`);
+        return callback(null, true);
+      } else {
+        console.log(`❌ CORS: Blocking origin: ${origin}`);
+        console.log(`📋 Allowed origins: ${allowedOrigins.join(', ')}`);
+        return callback(new Error(`Origin ${origin} not allowed by CORS`), false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['X-Total-Count', 'X-Page-Count']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Requested-With'],
+    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
   }),
 
   // Data sanitization against XSS
@@ -148,19 +203,44 @@ exports.blockSuspiciousUserAgents = (req, res, next) => {
   next();
 };
 
-// Validate request origin
+// Validate request origin with detailed logging
 exports.validateOrigin = (req, res, next) => {
   const origin = req.headers.origin;
+  console.log(`🔍 Origin validation check for: ${origin}`);
+  console.log(`📋 ALLOWED_ORIGINS from env: ${process.env.ALLOWED_ORIGINS}`);
+  
   const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
-    process.env.ALLOWED_ORIGINS.split(',') : 
+    process.env.ALLOWED_ORIGINS.split(',').map(orig => orig.trim()) : 
     ['http://localhost:3000', 'http://localhost:3001'];
 
-  if (origin && !allowedOrigins.includes(origin)) {
-    console.log(`🚫 Blocked request from unauthorized origin: ${origin}`);
-    return res.status(403).json({
-      success: false,
-      message: 'Origin not allowed'
+  console.log(`📋 Parsed allowed origins: ${allowedOrigins.join(', ')}`);
+
+  if (origin) {
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      // Handle exact matches
+      if (allowedOrigin === origin) return true;
+      
+      // Handle wildcard subdomains
+      if (allowedOrigin.includes('*')) {
+        const pattern = allowedOrigin.replace('*', '.*');
+        const regex = new RegExp(pattern);
+        return regex.test(origin);
+      }
+      
+      return false;
     });
+
+    if (!isAllowed) {
+      console.log(`🚫 Blocked request from unauthorized origin: ${origin}`);
+      return res.status(403).json({
+        success: false,
+        message: `Origin ${origin} not allowed`
+      });
+    }
+    
+    console.log(`✅ Allowed origin: ${origin}`);
+  } else {
+    console.log(`⚠️ No origin header present (might be a direct API call)`);
   }
 
   next();

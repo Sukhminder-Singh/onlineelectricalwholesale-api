@@ -1,16 +1,6 @@
 // Load environment variables
-const path = require('path');
-const fs = require('fs');
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-const envFiles = [`.env.${NODE_ENV}`, '.env', 'config.env'];
-for (const envFile of envFiles) {
-  const envPath = path.resolve(__dirname, '..', envFile);
-  if (fs.existsSync(envPath)) {
-    require('dotenv').config({ path: envPath });
-    break;
-  }
-}
+const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : 'config.env';
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', envFile) });
 
 const { sendSMS } = require('../utils/sms');
 const { logger } = require('../middleware/logger');
