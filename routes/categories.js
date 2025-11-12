@@ -102,6 +102,7 @@ router.get('/sample-tree',
 
 // Get frontend tree (Public)
 router.get('/frontend-tree', 
+  apiLimiter, 
   categoryController.getCategoriesFrontendTree
 );
 

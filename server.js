@@ -1,5 +1,6 @@
 // Load environment variables
 const path = require('path');
+console.log(process.env.NODE_ENV);
 const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : 'config.env';
 require('dotenv').config({ path: path.resolve(__dirname, envFile) });
 // Startup diagnostics to confirm environment loading

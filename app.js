@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 // Import middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { httpLogger, performanceLogger, securityLogger } = require('./middleware/logger');
-const { securityMiddleware, requestSizeLimiter, corsDebugger } = require('./middleware/security');
+const { securityMiddleware, requestSizeLimiter } = require('./middleware/security');
 
 // Import routes
 const productRoutes = require('./routes/products');
@@ -31,11 +31,6 @@ const app = express();
 // Trust proxy configuration for proper IP address detection
 // This is important for rate limiting and security features
 app.set('trust proxy', 1);
-
-// CORS debugging (only in development or when explicitly enabled)
-if (process.env.NODE_ENV === 'development' || process.env.CORS_DEBUG === 'true') {
-  app.use(corsDebugger);
-}
 
 // Security middleware (must be first)
 securityMiddleware.forEach(middleware => app.use(middleware));

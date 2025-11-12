@@ -620,7 +620,12 @@ exports.getCategoriesFrontendTree = asyncHandler(async (req, res) => {
   const categories = await Category.find({ isActive: true }).sort({ order: 1, name: 1 });
   const tree = buildCategoryTree(categories);
   const frontendTree = tree.map(convertToFrontendTreeNode);
-  res.json(frontendTree);
+  res.json({
+    success: true,
+    data: frontendTree,
+    count: frontendTree.length,
+    message: 'Frontend category tree retrieved successfully'
+  });
 });
 
 exports.getParentCategories = asyncHandler(async (req, res) => {
