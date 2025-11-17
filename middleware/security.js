@@ -76,12 +76,21 @@ exports.securityMiddleware = [
   // Enable CORS with dynamic origin validation
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+      // Allow requests with no origin (like mobile apps, curl requests, or CloudFront)
+      if (!origin) {
+        console.log(`✅ CORS: Allowing request with no origin (CloudFront/direct API call)`);
+        return callback(null, true);
+      }
       
       const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
         process.env.ALLOWED_ORIGINS.split(',').map(orig => orig.trim()) : 
         ['http://localhost:3000', 'http://localhost:5000'];
+      
+      // In production, also allow the API domain itself for CloudFront compatibility
+      const apiDomain = process.env.API_DOMAIN || 'https://api.onlineelectricalwholesale.com.au';
+      if (process.env.NODE_ENV === 'production' && !allowedOrigins.includes(apiDomain)) {
+        allowedOrigins.push(apiDomain);
+      }
       
       // Check if the origin is allowed
       const isAllowed = allowedOrigins.some(allowedOrigin => {
@@ -109,9 +118,11 @@ exports.securityMiddleware = [
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
     exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
-    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+    maxAge: 86400, // Cache preflight requests for 24 hours
+    optionsSuccessStatus: 200, // Some legacy browsers choke on 204
+    preflightContinue: false // Let CORS handle preflight, don't pass to next middleware
   }),
 
   // Data sanitization against XSS

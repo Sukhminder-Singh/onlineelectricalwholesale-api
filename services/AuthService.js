@@ -19,6 +19,8 @@ class AuthService {
     this.loginAttempts = new Map();
     this.maxAttempts = 3;
     this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
+    // Store pending registrations with OTP data
+    this.pendingRegistrations = new Map();
   }
 
   /**
@@ -149,11 +151,24 @@ class AuthService {
   }
 
   /**
-   * Request OTP for customer login
-   * @param {string} identifier - username/email/phone
+   * Request OTP for customer (handles both login and registration)
+   * @param {string|object} identifierOrData - username/email/phone (for login) OR full user data (for registration)
    * @returns {object} info about delivery
    */
-  async requestCustomerLoginOtp(identifier) {
+  async requestCustomerOtp(identifierOrData) {
+    // Check if it's registration data (object with username, email, password, etc.)
+    const isRegistrationData = typeof identifierOrData === 'object' && 
+                              identifierOrData.username && 
+                              identifierOrData.email && 
+                              identifierOrData.password;
+
+    if (isRegistrationData) {
+      // Handle registration OTP
+      return await this.requestRegistrationOtp(identifierOrData);
+    }
+
+    // Handle login OTP (existing customer)
+    const identifier = identifierOrData;
     const { conditions, isPhone, normalizedPhone } = this.buildUserSearchConditions(identifier);
     const user = await User.findOne({ $or: conditions });
 
@@ -197,12 +212,27 @@ class AuthService {
   }
 
   /**
-   * Verify OTP for customer login and return tokens
-   * @param {string} identifier - username/email/phone
+   * Verify OTP for customer (handles both login and registration)
+   * @param {string|object} identifierOrData - username/email/phone (for login) OR full user data (for registration)
    * @param {string} otp - 6-digit code
    * @returns {object} user and tokens
    */
-  async verifyCustomerLoginOtp(identifier, otp) {
+  async verifyCustomerOtp(identifierOrData, otp) {
+    // Check if it's registration data (object with username, email, password, etc.)
+    const isRegistrationData = typeof identifierOrData === 'object' && 
+                              identifierOrData.username && 
+                              identifierOrData.email && 
+                              identifierOrData.password;
+
+    if (isRegistrationData) {
+      // Handle registration OTP verification
+      const user = await this.verifyRegistrationOtp(identifierOrData, otp);
+      const { accessToken, refreshToken } = this.generateTokens(user._id);
+      return { user, accessToken, refreshToken };
+    }
+
+    // Handle login OTP verification (existing customer)
+    const identifier = identifierOrData;
     const { conditions } = this.buildUserSearchConditions(identifier);
     const user = await User.findOne({ $or: conditions });
 
@@ -247,15 +277,19 @@ class AuthService {
   }
 
   /**
-   * Register a new user
+   * Request OTP for new customer registration
    * @param {object} userData - User registration data
-   * @returns {object} Created user
+   * @returns {object} info about delivery
    */
-  async registerUser(userData) {
-    const { username, email, password, firstName, lastName, phoneNumber } = userData;
+  async requestRegistrationOtp(userData) {
+    const { username, email, phoneNumber } = userData;
 
     // Normalize phone number
     const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+
+    if (!normalizedPhone) {
+      throw new ValidationError('Phone number is required for OTP registration');
+    }
 
     // Build conditions to check for existing user
     const orConditions = [{ email }, { username }];
@@ -278,18 +312,222 @@ class AuthService {
       throw new ConflictError(message);
     }
 
+    // Generate a 6-digit numeric OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+
+    // Store pending registration with OTP (expires in 10 minutes)
+    const registrationKey = `${email}_${normalizedPhone}`;
+    this.pendingRegistrations.set(registrationKey, {
+      ...userData,
+      phoneNumber: normalizedPhone,
+      otp,
+      otpExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      otpAttempts: 0,
+      createdAt: Date.now()
+    });
+
+    // Clean up expired registrations (older than 15 minutes)
+    this.cleanupExpiredRegistrations();
+
+    try {
+      const message = `Your registration code is ${otp}. It expires in 10 minutes.`;
+      const sent = await sendSMS(normalizedPhone, message);
+      if (!sent) {
+        throw new Error('Failed to send SMS');
+      }
+    } catch (e) {
+      logger?.warn?.('Failed to send registration OTP SMS', { email, error: e.message });
+      // Remove the pending registration if SMS fails
+      this.pendingRegistrations.delete(registrationKey);
+      // Don't expose SMS provider errors to client
+    }
+
+    return { to: normalizedPhone, via: 'sms' };
+  }
+
+  /**
+   * Verify OTP and complete registration
+   * @param {object} userData - User registration data
+   * @param {string} otp - 6-digit code
+   * @returns {object} Created user
+   */
+  async verifyRegistrationOtp(userData, otp) {
+    const { email, phoneNumber } = userData;
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+
+    if (!normalizedPhone) {
+      throw new ValidationError('Phone number is required');
+    }
+
+    const registrationKey = `${email}_${normalizedPhone}`;
+    const pendingRegistration = this.pendingRegistrations.get(registrationKey);
+
+    if (!pendingRegistration) {
+      throw new AuthenticationError('No pending registration found. Please request a new OTP.');
+    }
+
+    // Check if OTP expired
+    const now = Date.now();
+    if (now > pendingRegistration.otpExpires) {
+      this.pendingRegistrations.delete(registrationKey);
+      throw new AuthenticationError('OTP expired. Please request a new one.');
+    }
+
+    // Check attempt limit
+    if (pendingRegistration.otpAttempts >= 5) {
+      this.pendingRegistrations.delete(registrationKey);
+      throw new AuthenticationError('Too many invalid attempts. Please request a new OTP.');
+    }
+
+    // Verify OTP
+    if (String(otp) !== String(pendingRegistration.otp)) {
+      pendingRegistration.otpAttempts++;
+      this.pendingRegistrations.set(registrationKey, pendingRegistration);
+      throw new AuthenticationError('Invalid OTP code');
+    }
+
+    // OTP verified - create the user
+    const { username, password, firstName, lastName } = pendingRegistration;
+
+    // Double-check user doesn't exist (race condition protection)
+    const orConditions = [{ email }, { username }];
+    if (normalizedPhone) {
+      orConditions.push({ phoneNumber: normalizedPhone });
+    }
+
+    const existingUser = await User.findOne({ $or: orConditions });
+    if (existingUser) {
+      this.pendingRegistrations.delete(registrationKey);
+      let message = 'User already exists';
+      if (existingUser.email === email) {
+        message = 'Email already registered';
+      } else if (existingUser.username === username) {
+        message = 'Username already taken';
+      } else if (existingUser.phoneNumber === normalizedPhone) {
+        message = 'Phone number already registered';
+      }
+      throw new ConflictError(message);
+    }
+
     // Create user data
     const newUserData = {
       username,
       email,
       password,
       firstName,
-      lastName
+      lastName,
+      phoneNumber: normalizedPhone
     };
 
-    if (normalizedPhone) {
-      newUserData.phoneNumber = normalizedPhone;
+    // Remove pending registration
+    this.pendingRegistrations.delete(registrationKey);
+
+    // Create the user
+    return await User.create(newUserData);
+  }
+
+  /**
+   * Clean up expired pending registrations
+   */
+  cleanupExpiredRegistrations() {
+    const now = Date.now();
+    const maxAge = 15 * 60 * 1000; // 15 minutes
+
+    for (const [key, registration] of this.pendingRegistrations.entries()) {
+      if (now - registration.createdAt > maxAge || now > registration.otpExpires) {
+        this.pendingRegistrations.delete(key);
+      }
     }
+  }
+
+  /**
+   * Register a new user (without OTP verification)
+   * @param {object} userData - User registration data (fullName, email, password, phoneNumber)
+   * @returns {object} Created user
+   */
+  async registerUser(userData) {
+    const { fullName, email, password, phoneNumber } = userData;
+
+    // Validate required fields
+    if (!fullName || !email || !password || !phoneNumber) {
+      throw new ValidationError('fullName, email, password, and phoneNumber are required');
+    }
+
+    // Normalize phone number
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    if (!normalizedPhone) {
+      throw new ValidationError('Phone number is required and must be valid');
+    }
+
+    // Split fullName into firstName and lastName
+    const nameParts = fullName.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    if (!firstName) {
+      throw new ValidationError('Full name must contain at least a first name');
+    }
+
+    // Check if email or phone already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { phoneNumber: normalizedPhone }
+      ]
+    });
+
+    if (existingUser) {
+      if (existingUser.email === email.toLowerCase()) {
+        throw new ConflictError('Email already registered');
+      } else if (existingUser.phoneNumber === normalizedPhone) {
+        throw new ConflictError('Phone number already registered');
+      }
+    }
+
+    // Generate unique username from email prefix
+    const emailPrefix = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+    let username;
+    let attempts = 0;
+    
+    // Ensure username is unique and meets length requirements (3-30 chars)
+    do {
+      const timestamp = Date.now().toString().slice(-6);
+      const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      const suffix = `${timestamp}${random}`;
+      
+      // Calculate max prefix length to keep total under 30 chars
+      const maxPrefixLength = Math.min(20, 30 - suffix.length - 1);
+      const prefix = emailPrefix.slice(0, maxPrefixLength);
+      
+      // Ensure minimum length of 3
+      if (prefix.length < 3) {
+        username = `user_${suffix}`;
+      } else {
+        username = `${prefix}_${suffix}`;
+      }
+      
+      // Check if username already exists
+      const usernameExists = await User.findOne({ username });
+      if (!usernameExists) {
+        break;
+      }
+      
+      attempts++;
+    } while (attempts < 10);
+
+    if (attempts >= 10) {
+      throw new Error('Unable to generate unique username. Please try again.');
+    }
+
+    // Create user data
+    const newUserData = {
+      username,
+      email: email.toLowerCase(),
+      password,
+      firstName,
+      lastName,
+      phoneNumber: normalizedPhone
+    };
 
     return await User.create(newUserData);
   }

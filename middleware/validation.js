@@ -3,6 +3,43 @@ const { validationResult } = require('express-validator');
 
 // Validation rules for registration
 exports.registerValidation = [
+  body('fullName')
+    .trim()
+    .notEmpty()
+    .withMessage('Full name is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Full name can only contain letters and spaces'),
+  
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('phoneNumber')
+    .trim()
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .matches(/^\+?[1-9]\d{7,14}$/)
+    .withMessage('Please enter a valid phone number in international format (e.g., +1234567890)')
+    .customSanitizer(value => {
+      // Normalize phone number to E.164 format
+      if (value && !value.startsWith('+')) {
+        return `+${value}`;
+      }
+      return value;
+    })
+];
+
+// Validation rules for requesting registration OTP
+exports.registerRequestOtpValidation = [
   body('username')
     .trim()
     .isLength({ min: 3, max: 30 })
@@ -36,8 +73,9 @@ exports.registerValidation = [
     .withMessage('Last name can only contain letters and spaces'),
   
   body('phoneNumber')
-    .optional()
     .trim()
+    .notEmpty()
+    .withMessage('Phone number is required for OTP registration')
     .matches(/^\+?[1-9]\d{7,14}$/)
     .withMessage('Please enter a valid phone number in international format (e.g., +1234567890)')
     .customSanitizer(value => {
@@ -47,6 +85,64 @@ exports.registerValidation = [
       }
       return value;
     })
+];
+
+// Validation rules for verifying registration OTP
+exports.registerVerifyOtpValidation = [
+  body('username')
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username can only contain letters, numbers, and underscores'),
+  
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('firstName')
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('First name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('First name can only contain letters and spaces'),
+  
+  body('lastName')
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('Last name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Last name can only contain letters and spaces'),
+  
+  body('phoneNumber')
+    .trim()
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .matches(/^\+?[1-9]\d{7,14}$/)
+    .withMessage('Please enter a valid phone number in international format (e.g., +1234567890)')
+    .customSanitizer(value => {
+      // Normalize phone number to E.164 format
+      if (value && !value.startsWith('+')) {
+        return `+${value}`;
+      }
+      return value;
+    }),
+  
+  body('otp')
+    .trim()
+    .notEmpty()
+    .withMessage('OTP code is required')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('OTP must be 6 digits')
+    .matches(/^\d+$/)
+    .withMessage('OTP must be numeric')
 ];
 
 
@@ -90,29 +186,159 @@ exports.customerLoginValidation = [
     .withMessage('Please provide password')
 ];
 
-// Validation rules for requesting customer login OTP
+// Validation rules for requesting customer OTP (handles both login and registration)
 exports.customerRequestOtpValidation = [
+  // For login: identifier is required
+  // For registration: username, email, password, firstName, lastName, phoneNumber are required
   body('identifier')
-    .trim()
-    .notEmpty()
-    .withMessage('Please provide username, email, or phone number')
-];
-
-// Validation rules for verifying customer login OTP
-exports.customerVerifyOtpValidation = [
-  body('identifier')
+    .optional()
     .trim()
     .notEmpty()
     .withMessage('Please provide username, email, or phone number'),
   
+  body('username')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username can only contain letters, numbers, and underscores'),
+  
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .optional()
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('firstName')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('First name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('First name can only contain letters and spaces'),
+  
+  body('lastName')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('Last name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Last name can only contain letters and spaces'),
+  
+  body('phoneNumber')
+    .optional()
+    .trim()
+    .matches(/^\+?[1-9]\d{7,14}$/)
+    .withMessage('Please enter a valid phone number in international format (e.g., +1234567890)')
+    .customSanitizer(value => {
+      if (value && !value.startsWith('+')) {
+        return `+${value}`;
+      }
+      return value;
+    }),
+  
+  // Custom validation to ensure either identifier OR all registration fields are provided
+  body().custom((value) => {
+    const hasIdentifier = value.identifier;
+    const hasRegistrationData = value.username && value.email && value.password && 
+                                value.firstName && value.lastName && value.phoneNumber;
+    
+    if (!hasIdentifier && !hasRegistrationData) {
+      throw new Error('Please provide either identifier (for login) OR all registration fields (username, email, password, firstName, lastName, phoneNumber)');
+    }
+    
+    return true;
+  })
+];
+
+// Validation rules for verifying customer OTP (handles both login and registration)
+exports.customerVerifyOtpValidation = [
   body('otp')
     .trim()
     .notEmpty()
     .withMessage('OTP code is required')
-    .isLength({ min: 4, max: 8 })
-    .withMessage('OTP code length looks invalid')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('OTP must be 6 digits')
     .matches(/^\d+$/)
-    .withMessage('OTP must be numeric')
+    .withMessage('OTP must be numeric'),
+  
+  // For login: identifier is required
+  // For registration: username, email, password, firstName, lastName, phoneNumber are required
+  body('identifier')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Please provide username, email, or phone number'),
+  
+  body('username')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username can only contain letters, numbers, and underscores'),
+  
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .optional()
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('firstName')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('First name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('First name can only contain letters and spaces'),
+  
+  body('lastName')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('Last name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Last name can only contain letters and spaces'),
+  
+  body('phoneNumber')
+    .optional()
+    .trim()
+    .matches(/^\+?[1-9]\d{7,14}$/)
+    .withMessage('Please enter a valid phone number in international format (e.g., +1234567890)')
+    .customSanitizer(value => {
+      if (value && !value.startsWith('+')) {
+        return `+${value}`;
+      }
+      return value;
+    }),
+  
+  // Custom validation to ensure either identifier OR all registration fields are provided
+  body().custom((value) => {
+    const hasIdentifier = value.identifier;
+    const hasRegistrationData = value.username && value.email && value.password && 
+                                value.firstName && value.lastName && value.phoneNumber;
+    
+    if (!hasIdentifier && !hasRegistrationData) {
+      throw new Error('Please provide either identifier (for login) OR all registration fields (username, email, password, firstName, lastName, phoneNumber)');
+    }
+    
+    return true;
+  })
 ];
 
 // Validation rules for profile update

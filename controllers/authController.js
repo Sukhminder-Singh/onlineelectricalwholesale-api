@@ -35,6 +35,7 @@ exports.register = asyncHandler(async (req, res, next) => {
 });
 
 
+
 // @desc    Role-based login user
 // @route   POST /api/auth/login
 // @access  Public
@@ -113,7 +114,7 @@ exports.customerLogin = asyncHandler(async (req, res, next) => {
   await createSendToken(user, 200, res);
 });
 
-// @desc    Request OTP for customer login
+// @desc    Request OTP for customer (handles both login and registration)
 // @route   POST /api/auth/customer/request-otp
 // @access  Public
 exports.requestCustomerOtp = asyncHandler(async (req, res, next) => {
@@ -122,16 +123,35 @@ exports.requestCustomerOtp = asyncHandler(async (req, res, next) => {
     throw new ValidationError('Validation failed', errors.array());
   }
 
-  const { identifier } = req.body;
-  if (!identifier) {
-    throw new ValidationError('Please provide username, email, or phone number');
+  // Check if it's registration data (has username, email, password) or login (just identifier)
+  const { identifier, username, email, password, firstName, lastName, phoneNumber } = req.body;
+  
+  const isRegistration = username && email && password;
+  
+  let requestData;
+  if (isRegistration) {
+    // Registration OTP - validate all fields
+    if (!firstName || !lastName || !phoneNumber) {
+      throw new ValidationError('For registration, please provide username, email, password, firstName, lastName, and phoneNumber');
+    }
+    requestData = { username, email, password, firstName, lastName, phoneNumber };
+  } else {
+    // Login OTP - just identifier
+    if (!identifier) {
+      throw new ValidationError('Please provide username, email, or phone number (for login) OR full registration data (username, email, password, firstName, lastName, phoneNumber)');
+    }
+    requestData = identifier;
   }
 
-  const info = await AuthService.requestCustomerLoginOtp(identifier);
-  return ResponseService.success(res, 200, 'OTP sent if the account exists and supports OTP login', info);
+  const info = await AuthService.requestCustomerOtp(requestData);
+  const message = isRegistration 
+    ? 'OTP sent to your phone number for registration' 
+    : 'OTP sent if the account exists and supports OTP login';
+  
+  return ResponseService.success(res, 200, message, info);
 });
 
-// @desc    Verify OTP for customer login
+// @desc    Verify OTP for customer (handles both login and registration)
 // @route   POST /api/auth/customer/verify-otp
 // @access  Public
 exports.verifyCustomerOtp = asyncHandler(async (req, res, next) => {
@@ -140,13 +160,36 @@ exports.verifyCustomerOtp = asyncHandler(async (req, res, next) => {
     throw new ValidationError('Validation failed', errors.array());
   }
 
-  const { identifier, otp } = req.body;
-  if (!identifier || !otp) {
-    throw new ValidationError('Identifier and OTP code are required');
+  const { identifier, otp, username, email, password, firstName, lastName, phoneNumber } = req.body;
+  
+  if (!otp) {
+    throw new ValidationError('OTP code is required');
   }
 
-  const { user, accessToken, refreshToken } = await AuthService.verifyCustomerLoginOtp(identifier, otp);
-  return ResponseService.authSuccess(res, user, accessToken, refreshToken, 'Logged in successfully');
+  // Check if it's registration data (has username, email, password) or login (just identifier)
+  const isRegistration = username && email && password;
+  
+  let requestData;
+  if (isRegistration) {
+    // Registration OTP verification
+    if (!firstName || !lastName || !phoneNumber) {
+      throw new ValidationError('For registration, please provide username, email, password, firstName, lastName, and phoneNumber');
+    }
+    requestData = { username, email, password, firstName, lastName, phoneNumber };
+  } else {
+    // Login OTP verification
+    if (!identifier) {
+      throw new ValidationError('Please provide identifier (for login) OR full registration data with OTP');
+    }
+    requestData = identifier;
+  }
+
+  const { user, accessToken, refreshToken } = await AuthService.verifyCustomerOtp(requestData, otp);
+  const message = isRegistration 
+    ? 'Registration successful. Welcome!' 
+    : 'Logged in successfully';
+  
+  return ResponseService.authSuccess(res, user, accessToken, refreshToken, message);
 });
 
 // @desc    Refresh access token

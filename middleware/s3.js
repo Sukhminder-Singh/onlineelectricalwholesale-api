@@ -21,8 +21,8 @@ const s3 = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
   },
   region: process.env.AWS_REGION,
-  forcePathStyle: false,
-  endpoint: `https://s3.${process.env.AWS_REGION}.amazonaws.com`
+  // Let AWS SDK automatically determine the correct endpoint based on region
+  // Explicit endpoint can cause issues if bucket is in a different region
 });
 
 // Configure multer for S3
@@ -88,10 +88,26 @@ upload.errorHandler = (error, req, res, next) => {
   }
   
   console.error('Upload error:', error);
-  res.status(500).json({
+  
+  // Provide more helpful error messages for common S3 errors
+  let errorMessage = error.message;
+  let statusCode = 500;
+  
+  if (error.message && error.message.includes('endpoint')) {
+    errorMessage = 'S3 bucket region mismatch. Please verify AWS_REGION matches your bucket\'s actual region.';
+    statusCode = 400;
+  } else if (error.message && error.message.includes('Access Denied')) {
+    errorMessage = 'Access denied to S3 bucket. Please check your AWS credentials and bucket permissions.';
+    statusCode = 403;
+  } else if (error.message && error.message.includes('NoSuchBucket')) {
+    errorMessage = 'S3 bucket not found. Please verify AWS_BUCKET_NAME is correct.';
+    statusCode = 404;
+  }
+  
+  res.status(statusCode).json({
     success: false,
     message: 'File upload failed.',
-    error: error.message
+    error: errorMessage
   });
 };
 

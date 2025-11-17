@@ -32,6 +32,48 @@ const app = express();
 // This is important for rate limiting and security features
 app.set('trust proxy', 1);
 
+// Explicit OPTIONS handler for CORS preflight (must be before security middleware)
+// This ensures CloudFront and browsers can properly handle preflight requests
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+  console.log(`🔍 OPTIONS preflight request for: ${req.path} from origin: ${origin || 'None'}`);
+  
+  // Set CORS headers manually for preflight
+  if (origin) {
+    const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
+      process.env.ALLOWED_ORIGINS.split(',').map(orig => orig.trim()) : 
+      ['http://localhost:3000', 'http://localhost:5000'];
+    
+    const apiDomain = process.env.API_DOMAIN || 'https://api.onlineelectricalwholesale.com.au';
+    if (process.env.NODE_ENV === 'production' && !allowedOrigins.includes(apiDomain)) {
+      allowedOrigins.push(apiDomain);
+    }
+    
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (allowedOrigin === origin) return true;
+      if (allowedOrigin.includes('*')) {
+        const pattern = allowedOrigin.replace('*', '.*');
+        const regex = new RegExp(pattern);
+        return regex.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed || !origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+    }
+  } else {
+    // Allow requests with no origin (CloudFront/direct API calls)
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  res.status(200).end();
+});
+
 // Security middleware (must be first)
 securityMiddleware.forEach(middleware => app.use(middleware));
 
