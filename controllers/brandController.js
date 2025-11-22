@@ -59,7 +59,7 @@ exports.createBrand = async (req, res) => {
 
 exports.getBrands = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, isActive } = req.query;
+    const { search, isActive } = req.query;
     
     // Build filter
     const filter = {};
@@ -70,24 +70,13 @@ exports.getBrands = async (req, res) => {
       filter.isActive = isActive === 'true';
     }
     
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Get all brands without pagination
     const brands = await Brand.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-    
-    const total = await Brand.countDocuments(filter);
+      .sort({ createdAt: -1 });
     
     res.json({
       success: true,
-      data: brands,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalItems: total,
-        itemsPerPage: parseInt(limit)
-      }
+      data: brands
     });
   } catch (err) {
     console.error('Get brands error:', err);
