@@ -89,7 +89,7 @@ exports.getProductsByCategory = asyncHandler(async (req, res) => {
 exports.getProductsByBrand = asyncHandler(async (req, res) => {
   const { brandId } = req.params;
   const result = await ProductService.getProductsByBrand(brandId, req.query);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Products retrieved successfully');
+  return ResponseService.success(res, 200, 'Products retrieved successfully', result.products);
 });
 
 /**

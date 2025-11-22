@@ -800,16 +800,15 @@ class ProductService {
    * Get products by brand
    * @param {string} brandId - Brand ID
    * @param {object} options - Query options
-   * @returns {object} Products and pagination info
+   * @returns {object} Products
    */
   async getProductsByBrand(brandId, options = {}) {
     if (!mongoose.Types.ObjectId.isValid(brandId)) {
       throw new ValidationError('Invalid brand ID format');
     }
 
-    const { page = 1, limit = 10, sort = '-createdAt', status = 'active' } = options;
+    const { sort = '-createdAt', status = 'active' } = options;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     const filter = { 
       brandId: brandId,
       deletedAt: { $exists: false }
@@ -819,31 +818,14 @@ class ProductService {
       filter.status = status;
     }
 
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .populate('brandId', 'name description')
-        .populate('categories', 'name description')
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Product.countDocuments(filter)
-    ]);
-
-    const totalPages = Math.ceil(total / parseInt(limit));
-    const hasNextPage = parseInt(page) < totalPages;
-    const hasPrevPage = parseInt(page) > 1;
+    const products = await Product.find(filter)
+      .populate('brandId', 'name description')
+      .populate('categories', 'name description')
+      .sort(sort)
+      .lean();
 
     return {
-      products,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: total,
-        itemsPerPage: parseInt(limit),
-        hasNextPage,
-        hasPrevPage
-      }
+      products
     };
   }
 
