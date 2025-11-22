@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const Brand = require('../models/Brand');
+const Attribute = require('../models/Attribute');
 const { NotFoundError, ValidationError, ConflictError } = require('../middleware/errorHandler');
 const { logger } = require('../middleware/logger');
 const mongoose = require('mongoose');
@@ -117,6 +118,60 @@ class ProductService {
     }
 
     return processed;
+  }
+
+  /**
+   * Helper function to enrich product attributes with attribute names
+   * @param {object|Array} products - Single product object or array of products
+   * @returns {Promise<object|Array>} Product(s) with enriched attributes
+   */
+  async enrichAttributesWithNames(products) {
+    const isArray = Array.isArray(products);
+    const productList = isArray ? products : [products];
+    
+    // Collect all unique attribute IDs
+    const attributeIds = new Set();
+    productList.forEach(product => {
+      if (product.attributes && Array.isArray(product.attributes)) {
+        product.attributes.forEach(attr => {
+          if (attr.id) {
+            attributeIds.add(attr.id);
+          }
+        });
+      }
+    });
+
+    // Fetch all attributes in one query
+    const attributesMap = new Map();
+    if (attributeIds.size > 0) {
+      // Convert string IDs to ObjectIds for querying
+      const objectIds = Array.from(attributeIds)
+        .filter(id => mongoose.Types.ObjectId.isValid(id))
+        .map(id => new mongoose.Types.ObjectId(id));
+
+      if (objectIds.length > 0) {
+        const attributes = await Attribute.find({
+          _id: { $in: objectIds }
+        }).select('_id name').lean();
+        
+        attributes.forEach(attr => {
+          // Store with string format for lookup (since product attributes use string IDs)
+          attributesMap.set(attr._id.toString(), attr.name);
+        });
+      }
+    }
+
+    // Enrich attributes with names
+    productList.forEach(product => {
+      if (product.attributes && Array.isArray(product.attributes)) {
+        product.attributes = product.attributes.map(attr => ({
+          ...attr,
+          name: attributesMap.get(attr.id) || null
+        }));
+      }
+    });
+
+    return isArray ? productList : productList[0];
   }
 
   /**
@@ -320,7 +375,9 @@ class ProductService {
       sku: product.sku
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 
   /**
@@ -431,13 +488,16 @@ class ProductService {
       Product.countDocuments(filter)
     ]);
 
+    // Enrich attributes with names
+    const enrichedProducts = await this.enrichAttributesWithNames(products);
+
     // Calculate pagination info
     const totalPages = Math.ceil(total / parseInt(limit));
     const hasNextPage = parseInt(page) < totalPages;
     const hasPrevPage = parseInt(page) > 1;
 
     return {
-      products,
+      products: enrichedProducts,
       pagination: {
         currentPage: parseInt(page),
         totalPages,
@@ -476,7 +536,8 @@ class ProductService {
       throw new NotFoundError('Product');
     }
 
-    return product;
+    // Enrich attributes with names
+    return await this.enrichAttributesWithNames(product);
   }
 
   /**
@@ -589,7 +650,9 @@ class ProductService {
       sku: product.sku
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 
   /**
@@ -761,6 +824,9 @@ class ProductService {
         Product.countDocuments(filter)
       ]);
 
+      // Enrich attributes with names
+      const enrichedProducts = await this.enrichAttributesWithNames(products);
+
       const totalPages = Math.ceil(total / parseInt(limit));
       const hasNextPage = parseInt(page) < totalPages;
       const hasPrevPage = parseInt(page) > 1;
@@ -768,14 +834,14 @@ class ProductService {
       logger.info('Products retrieved by category', {
         categoryId,
         categoryIds,
-        productCount: products.length,
+        productCount: enrichedProducts.length,
         total,
         page,
         limit
       });
 
       return {
-        products,
+        products: enrichedProducts,
         categoryIds: categoryIds, // Return which categories were searched
         pagination: {
           currentPage: parseInt(page),
@@ -824,8 +890,11 @@ class ProductService {
       .sort(sort)
       .lean();
 
+    // Enrich attributes with names
+    const enrichedProducts = await this.enrichAttributesWithNames(products);
+
     return {
-      products
+      products: enrichedProducts
     };
   }
 
@@ -905,12 +974,15 @@ class ProductService {
         Product.countDocuments(filter)
       ]);
 
+      // Enrich attributes with names
+      const enrichedProducts = await this.enrichAttributesWithNames(products);
+
       const totalPages = Math.ceil(total / parseInt(limit));
       const hasNextPage = parseInt(page) < totalPages;
       const hasPrevPage = parseInt(page) > 1;
 
       return {
-        products,
+        products: enrichedProducts,
         category: {
           _id: category._id,
           name: category.name,
@@ -1079,7 +1151,9 @@ class ProductService {
       productName: product.productName
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 
   /**
@@ -1162,8 +1236,11 @@ class ProductService {
 
     const total = await Product.countDocuments(filter);
 
+    // Enrich attributes with names
+    const enrichedProducts = await this.enrichAttributesWithNames(products);
+
     logger.info('Featured products retrieved', {
-      count: products.length,
+      count: enrichedProducts.length,
       total,
       page,
       limit,
@@ -1171,7 +1248,7 @@ class ProductService {
     });
 
     return {
-      products,
+      products: enrichedProducts,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1222,7 +1299,9 @@ class ProductService {
       productName: product.productName
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 
   /**
@@ -1256,7 +1335,9 @@ class ProductService {
       productName: product.productName
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 
   /**
@@ -1290,7 +1371,9 @@ class ProductService {
       productName: product.productName
     });
 
-    return product;
+    // Convert to plain object and enrich attributes with names
+    const productObj = product.toObject();
+    return await this.enrichAttributesWithNames(productObj);
   }
 }
 
