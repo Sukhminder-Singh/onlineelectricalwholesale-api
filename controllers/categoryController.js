@@ -103,22 +103,6 @@ const validateGetCategoriesQuery = (query) => {
     });
   }
   
-  // Validate pagination parameters
-  if (query.page && (!Number.isInteger(+query.page) || +query.page < 1)) {
-    errors.push({
-      field: 'page',
-      message: 'Page must be a positive integer',
-      value: query.page
-    });
-  }
-  
-  if (query.limit && (!Number.isInteger(+query.limit) || +query.limit < 1 || +query.limit > 100)) {
-    errors.push({
-      field: 'limit',
-      message: 'Limit must be a positive integer between 1 and 100',
-      value: query.limit
-    });
-  }
   
   if (errors.length > 0) {
     throw new ValidationError('Invalid query parameters', errors);
@@ -127,18 +111,12 @@ const validateGetCategoriesQuery = (query) => {
 
 // Enhanced database query with better error handling
 const fetchCategoriesFromDB = async (query, options = {}) => {
-  const { page, limit, format } = options;
+  const { format } = options;
   
   try {
-    let dbQuery = Category.find(query)
+    const dbQuery = Category.find(query)
       .populate('parent', 'name _id')
       .sort({ order: 1, name: 1 });
-    
-    // Add pagination for list format
-    if (format === 'list' && page && limit) {
-      const skip = (page - 1) * limit;
-      dbQuery = dbQuery.skip(skip).limit(limit);
-    }
     
     const categories = await dbQuery;
     return categories;
@@ -239,7 +217,7 @@ exports.createCategory = asyncHandler(async (req, res) => {
 });
 
 exports.getCategories = asyncHandler(async (req, res) => {
-  const { format = 'list', isActive, page, limit } = req.query;
+  const { format = 'list', isActive } = req.query;
   
   // Validate query parameters
   validateGetCategoriesQuery(req.query);
@@ -250,8 +228,8 @@ exports.getCategories = asyncHandler(async (req, res) => {
     query.isActive = isActive === 'true';
   }
 
-  // Check cache first (only for non-paginated requests)
-  const useCache = !page && !limit && format === 'list';
+  // Check cache first (for list format)
+  const useCache = format === 'list';
   if (useCache) {
     const cachedData = categoryCache.get();
     if (cachedData) {
@@ -267,9 +245,9 @@ exports.getCategories = asyncHandler(async (req, res) => {
   }
 
   // Fetch from database
-  const categories = await fetchCategoriesFromDB(query, { page, limit, format });
+  const categories = await fetchCategoriesFromDB(query, { format });
   
-  // Cache the results for list format without pagination
+  // Cache the results for list format
   if (useCache) {
     categoryCache.set(categories);
     logger.info('Categories cached for future requests');
@@ -287,30 +265,13 @@ exports.getCategories = asyncHandler(async (req, res) => {
     });
   }
 
-  // Handle list format with pagination
-  let response = {
+  // Handle list format
+  return res.json({
     success: true,
     data: categories,
     count: categories.length,
     message: 'Categories retrieved successfully'
-  };
-
-  // Add pagination metadata if pagination is used
-  if (page && limit) {
-    const totalCount = await Category.countDocuments(query);
-    const totalPages = Math.ceil(totalCount / limit);
-    
-    response.pagination = {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalCount,
-      totalPages,
-      hasNext: parseInt(page) < totalPages,
-      hasPrev: parseInt(page) > 1
-    };
-  }
-
-  res.json(response);
+  });
 });
 
 exports.getCategoryById = asyncHandler(async (req, res) => {

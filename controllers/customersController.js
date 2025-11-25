@@ -48,7 +48,7 @@ exports.getCustomers = asyncHandler(async (req, res, next) => {
   };
   
   const result = await UserService.getAllUsers(options);
-  return ResponseService.paginated(res, result.users, result.pagination, 'Customers retrieved successfully');
+  return ResponseService.success(res, 200, 'Customers retrieved successfully', result.users);
 });
 
 // @desc    Get customer by ID
@@ -208,5 +208,5 @@ exports.searchCustomers = asyncHandler(async (req, res, next) => {
   };
   
   const result = await UserService.getAllUsers(options);
-  return ResponseService.paginated(res, result.users, result.pagination, 'Customer search results');
+  return ResponseService.success(res, 200, 'Customer search results', result.users);
 });

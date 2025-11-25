@@ -42,12 +42,10 @@ const buildStatusFilter = (status) => {
   }
 };
 
-// Get all promo codes with filtering, searching, and pagination
+// Get all promo codes with filtering and searching
 exports.getAllPromoCodes = async (req, res) => {
   try {
     const {
-      page = 1,
-      limit = 10,
       search,
       status = 'all',
       sortBy = 'createdAt',
@@ -64,34 +62,15 @@ exports.getAllPromoCodes = async (req, res) => {
     const sortObj = {};
     sortObj[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
     // Execute query
-    const [promoCodes, total] = await Promise.all([
-      PromoCode.find(query)
-        .populate('applicableProducts', 'productName sku price mainImage')
-        .populate('createdBy', 'username firstName lastName')
-        .sort(sortObj)
-        .skip(skip)
-        .limit(parseInt(limit)),
-      PromoCode.countDocuments(query)
-    ]);
-
-    // Calculate pagination info
-    const totalPages = Math.ceil(total / parseInt(limit));
+    const promoCodes = await PromoCode.find(query)
+      .populate('applicableProducts', 'productName sku price mainImage')
+      .populate('createdBy', 'username firstName lastName')
+      .sort(sortObj);
 
     res.status(200).json({
       success: true,
-      data: {
-        promoCodes,
-        pagination: {
-          total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages
-        }
-      },
+      data: promoCodes,
       message: 'Promo codes retrieved successfully'
     });
   } catch (error) {

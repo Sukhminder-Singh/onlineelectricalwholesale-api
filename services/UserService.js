@@ -38,12 +38,12 @@ class UserService {
   }
 
   /**
-   * Get all users with filtering and pagination
+   * Get all users with filtering
    * @param {object} options - Query options
-   * @returns {object} Users and pagination info
+   * @returns {object} Users
    */
   async getAllUsers(options = {}) {
-    const { page = 1, limit = 10, search, role, isActive } = options;
+    const { search, role, isActive } = options;
     
     // Build filter object
     const filter = {};
@@ -65,35 +65,14 @@ class UserService {
     if (isActive !== undefined) {
       filter.isActive = isActive === 'true';
     }
-
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    // Get users with pagination
-    const [users, totalUsers] = await Promise.all([
-      User.find(filter)
-        .select('-password -passwordResetToken -passwordResetExpires')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      User.countDocuments(filter)
-    ]);
-    
-    // Calculate pagination info
-    const totalPages = Math.ceil(totalUsers / parseInt(limit));
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
+    // Get all users
+    const users = await User.find(filter)
+      .select('-password -passwordResetToken -passwordResetExpires')
+      .sort({ createdAt: -1 });
 
     return {
-      users,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalUsers,
-        hasNextPage,
-        hasPrevPage,
-        limit: parseInt(limit)
-      }
+      users
     };
   }
 

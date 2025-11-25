@@ -133,12 +133,10 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// Get all orders with filtering and pagination
+// Get all orders with filtering
 exports.getOrders = async (req, res) => {
   try {
     const {
-      page = 1,
-      limit = 10,
       status,
       paymentStatus,
       customer,
@@ -180,8 +178,6 @@ exports.getOrders = async (req, res) => {
       ];
     }
 
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
@@ -189,24 +185,11 @@ exports.getOrders = async (req, res) => {
     const orders = await Order.find(filter)
       .populate('customer', 'username email firstName lastName')
       .populate('items.product', 'productName sku price mainImage')
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const totalOrders = await Order.countDocuments(filter);
-    const totalPages = Math.ceil(totalOrders / parseInt(limit));
+      .sort(sortOptions);
 
     res.json({
       success: true,
-      data: orders,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: totalOrders,
-        itemsPerPage: parseInt(limit),
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+      data: orders
     });
   } catch (error) {
     console.error('Get orders error:', error);
@@ -504,8 +487,6 @@ exports.getOrderStats = async (req, res) => {
 exports.getMyOrders = async (req, res) => {
   try {
     const {
-      page = 1,
-      limit = 10,
       status,
       dateFrom,
       dateTo
@@ -521,28 +502,13 @@ exports.getMyOrders = async (req, res) => {
       if (dateTo) filter.createdAt.$lte = new Date(dateTo);
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const orders = await Order.find(filter)
       .populate('items.product', 'productName sku price mainImage')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const totalOrders = await Order.countDocuments(filter);
-    const totalPages = Math.ceil(totalOrders / parseInt(limit));
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      data: orders,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: totalOrders,
-        itemsPerPage: parseInt(limit),
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+      data: orders
     });
   } catch (error) {
     console.error('Get my orders error:', error);

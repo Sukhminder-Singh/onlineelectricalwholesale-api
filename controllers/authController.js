@@ -320,7 +320,7 @@ exports.adminReactivateUser = asyncHandler(async (req, res, next) => {
 // @access  Private (Admin only)
 exports.getAllUsers = asyncHandler(async (req, res, next) => {
   const result = await UserService.getAllUsers(req.query);
-  return ResponseService.paginated(res, result.users, result.pagination, 'Users retrieved successfully');
+  return ResponseService.success(res, 200, 'Users retrieved successfully', result.users);
 });
 
 // @desc    Get user details by ID (Admin only)

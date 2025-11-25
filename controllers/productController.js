@@ -15,13 +15,13 @@ exports.createProduct = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get all products with filtering, sorting, and pagination
+ * Get all products with filtering and sorting
  * @route GET /api/products
  * @access Public
  */
 exports.getProducts = asyncHandler(async (req, res) => {
   const result = await ProductService.getProducts(req.query);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Products retrieved successfully');
+  return ResponseService.success(res, 200, 'Products retrieved successfully', result.products);
 });
 
 /**
@@ -37,7 +37,7 @@ exports.getAdminProducts = asyncHandler(async (req, res) => {
     includeDeleted: req.query.includeDeleted ?? true
   };
   const result = await ProductService.getProducts(options);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Admin products retrieved successfully');
+  return ResponseService.success(res, 200, 'Admin products retrieved successfully', result.products);
 });
 
 /**
@@ -78,7 +78,7 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
 exports.getProductsByCategory = asyncHandler(async (req, res) => {
   const { categoryId } = req.params;
   const result = await ProductService.getProductsByCategory(categoryId, req.query);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Products retrieved successfully');
+  return ResponseService.success(res, 200, 'Products retrieved successfully', result.products);
 });
 
 /**
@@ -111,8 +111,7 @@ exports.getProductsByCategorySlug = asyncHandler(async (req, res) => {
   return ResponseService.success(res, 200, 'Products retrieved successfully', {
     products: result.products,
     category: result.category,
-    categoryIds: result.categoryIds,
-    pagination: result.pagination
+    categoryIds: result.categoryIds
   });
 });
 
@@ -180,7 +179,7 @@ exports.updateProductStock = asyncHandler(async (req, res) => {
 exports.getLowStockProducts = asyncHandler(async (req, res) => {
   const options = { ...req.query, isLowStock: true };
   const result = await ProductService.getProducts(options);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Low stock products retrieved successfully');
+  return ResponseService.success(res, 200, 'Low stock products retrieved successfully', result.products);
 });
 
 /**
@@ -191,7 +190,7 @@ exports.getLowStockProducts = asyncHandler(async (req, res) => {
 exports.getOutOfStockProducts = asyncHandler(async (req, res) => {
   const options = { ...req.query, stockStatus: 'out_of_stock' };
   const result = await ProductService.getProducts(options);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Out of stock products retrieved successfully');
+  return ResponseService.success(res, 200, 'Out of stock products retrieved successfully', result.products);
 });
 
 /**
@@ -201,7 +200,7 @@ exports.getOutOfStockProducts = asyncHandler(async (req, res) => {
  */
 exports.getFeaturedProducts = asyncHandler(async (req, res) => {
   const result = await ProductService.getFeaturedProducts(req.query);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Featured products retrieved successfully');
+  return ResponseService.success(res, 200, 'Featured products retrieved successfully', result.products);
 });
 
 /**
@@ -216,7 +215,7 @@ exports.getAdminFeaturedProducts = asyncHandler(async (req, res) => {
     includeDeleted: req.query.includeDeleted ?? true
   };
   const result = await ProductService.getProducts(options);
-  return ResponseService.paginated(res, result.products, result.pagination, 'Admin featured products retrieved successfully');
+  return ResponseService.success(res, 200, 'Admin featured products retrieved successfully', result.products);
 });
 
 /**

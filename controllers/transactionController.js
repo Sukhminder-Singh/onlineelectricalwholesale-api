@@ -58,12 +58,10 @@ exports.createTransaction = async (req, res) => {
   }
 };
 
-// Get all transactions with filtering and pagination
+// Get all transactions with filtering
 exports.getTransactions = async (req, res) => {
   try {
     const {
-      page = 1,
-      limit = 10,
       status,
       paymentMethod,
       customer,
@@ -108,32 +106,17 @@ exports.getTransactions = async (req, res) => {
       ];
     }
 
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     // Execute query
     const transactions = await Transaction.find(filter)
       .populate('processedBy', 'username firstName lastName')
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const totalTransactions = await Transaction.countDocuments(filter);
-    const totalPages = Math.ceil(totalTransactions / parseInt(limit));
+      .sort(sortOptions);
 
     res.json({
       success: true,
-      data: transactions,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: totalTransactions,
-        itemsPerPage: parseInt(limit),
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+      data: transactions
     });
   } catch (error) {
     console.error('Get transactions error:', error);
@@ -421,8 +404,6 @@ exports.getTransactionStats = async (req, res) => {
 exports.getMyTransactions = async (req, res) => {
   try {
     const {
-      page = 1,
-      limit = 10,
       status,
       dateFrom,
       dateTo
@@ -445,28 +426,13 @@ exports.getMyTransactions = async (req, res) => {
       if (dateTo) filter.transactionDate.$lte = new Date(dateTo);
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const transactions = await Transaction.find(filter)
       .populate('processedBy', 'username firstName lastName')
-      .sort({ transactionDate: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const totalTransactions = await Transaction.countDocuments(filter);
-    const totalPages = Math.ceil(totalTransactions / parseInt(limit));
+      .sort({ transactionDate: -1 });
 
     res.json({
       success: true,
-      data: transactions,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: totalTransactions,
-        itemsPerPage: parseInt(limit),
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+      data: transactions
     });
   } catch (error) {
     console.error('Get my transactions error:', error);

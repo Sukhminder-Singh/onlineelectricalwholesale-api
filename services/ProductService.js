@@ -381,14 +381,12 @@ class ProductService {
   }
 
   /**
-   * Get all products with filtering, sorting, and pagination
+   * Get all products with filtering and sorting
    * @param {object} options - Query options
-   * @returns {object} Products and pagination info
+   * @returns {object} Products
    */
   async getProducts(options = {}) {
     const {
-      page = 1,
-      limit = 10,
       sort = '-createdAt',
       categories,
       brandId,
@@ -470,42 +468,21 @@ class ProductService {
         { seller: { $regex: search, $options: 'i' } }
       ];
     }
-
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     
     // Execute query with population
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .populate('brandId', 'name description')
-        .populate('categories', 'name description')
-        .populate('createdBy', 'firstName lastName username')
-        .populate('updatedBy', 'firstName lastName username')
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Product.countDocuments(filter)
-    ]);
+    const products = await Product.find(filter)
+      .populate('brandId', 'name description')
+      .populate('categories', 'name description')
+      .populate('createdBy', 'firstName lastName username')
+      .populate('updatedBy', 'firstName lastName username')
+      .sort(sort)
+      .lean();
 
     // Enrich attributes with names
     const enrichedProducts = await this.enrichAttributesWithNames(products);
 
-    // Calculate pagination info
-    const totalPages = Math.ceil(total / parseInt(limit));
-    const hasNextPage = parseInt(page) < totalPages;
-    const hasPrevPage = parseInt(page) > 1;
-
     return {
-      products: enrichedProducts,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalItems: total,
-        itemsPerPage: parseInt(limit),
-        hasNextPage,
-        hasPrevPage
-      }
+      products: enrichedProducts
     };
   }
 
@@ -775,7 +752,7 @@ class ProductService {
    * Get products by category (includes products from all subcategories)
    * @param {string} categoryId - Category ID
    * @param {object} options - Query options
-   * @returns {object} Products and pagination info
+   * @returns {object} Products
    */
   async getProductsByCategory(categoryId, options = {}) {
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
@@ -783,8 +760,6 @@ class ProductService {
     }
 
     const { 
-      page = 1, 
-      limit = 10, 
       sort = '-createdAt', 
       status = 'active',
       includeSubcategories = true // New option to include subcategories
@@ -792,10 +767,8 @@ class ProductService {
 
     logger.info('Getting products by category', {
       categoryId,
-      options: { page, limit, sort, status, includeSubcategories }
+      options: { sort, status, includeSubcategories }
     });
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     
     // Get all category IDs to search (including subcategories if requested)
     let categoryIds = [categoryId];
@@ -813,44 +786,24 @@ class ProductService {
     }
 
     try {
-      const [products, total] = await Promise.all([
-        Product.find(filter)
-          .populate('brandId', 'name description')
-          .populate('categories', 'name description parent slug')
-          .sort(sort)
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Product.countDocuments(filter)
-      ]);
+      const products = await Product.find(filter)
+        .populate('brandId', 'name description')
+        .populate('categories', 'name description parent slug')
+        .sort(sort)
+        .lean();
 
       // Enrich attributes with names
       const enrichedProducts = await this.enrichAttributesWithNames(products);
 
-      const totalPages = Math.ceil(total / parseInt(limit));
-      const hasNextPage = parseInt(page) < totalPages;
-      const hasPrevPage = parseInt(page) > 1;
-
       logger.info('Products retrieved by category', {
         categoryId,
         categoryIds,
-        productCount: enrichedProducts.length,
-        total,
-        page,
-        limit
+        productCount: enrichedProducts.length
       });
 
       return {
         products: enrichedProducts,
-        categoryIds: categoryIds, // Return which categories were searched
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalItems: total,
-          itemsPerPage: parseInt(limit),
-          hasNextPage,
-          hasPrevPage
-        }
+        categoryIds: categoryIds // Return which categories were searched
       };
     } catch (error) {
       logger.error('Error getting products by category', {
@@ -902,7 +855,7 @@ class ProductService {
    * Get products by category slug
    * @param {string} categorySlug - Category slug
    * @param {object} options - Query options
-   * @returns {object} Products and pagination info
+   * @returns {object} Products
    */
   async getProductsByCategorySlug(categorySlug, options = {}) {
     if (!categorySlug || typeof categorySlug !== 'string') {
@@ -910,8 +863,6 @@ class ProductService {
     }
 
     const { 
-      page = 1, 
-      limit = 10, 
       sort = '-createdAt', 
       status = 'active',
       includeSubcategories = true,
@@ -920,7 +871,7 @@ class ProductService {
 
     logger.info('Getting products by category slug', {
       categorySlug,
-      options: { page, limit, sort, status, includeSubcategories, fields }
+      options: { sort, status, includeSubcategories, fields }
     });
 
     // First, find the category by slug
@@ -932,8 +883,6 @@ class ProductService {
     if (!category) {
       throw new NotFoundError('Category');
     }
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
     
     // Get all category IDs to search (including subcategories if requested)
     let categoryIds = [category._id.toString()];
@@ -962,24 +911,15 @@ class ProductService {
         selectFields._id = 1;
       }
 
-      const [products, total] = await Promise.all([
-        Product.find(filter)
-          .select(selectFields)
-          .populate('brandId', 'name description')
-          .populate('categories', 'name description parent slug')
-          .sort(sort)
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Product.countDocuments(filter)
-      ]);
+      const products = await Product.find(filter)
+        .select(selectFields)
+        .populate('brandId', 'name description')
+        .populate('categories', 'name description parent slug')
+        .sort(sort)
+        .lean();
 
       // Enrich attributes with names
       const enrichedProducts = await this.enrichAttributesWithNames(products);
-
-      const totalPages = Math.ceil(total / parseInt(limit));
-      const hasNextPage = parseInt(page) < totalPages;
-      const hasPrevPage = parseInt(page) > 1;
 
       return {
         products: enrichedProducts,
@@ -991,15 +931,7 @@ class ProductService {
           image: category.image,
           parent: category.parent
         },
-        categoryIds: categoryIds, // Return which categories were searched
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalItems: total,
-          itemsPerPage: parseInt(limit),
-          hasNextPage,
-          hasPrevPage
-        }
+        categoryIds: categoryIds // Return which categories were searched
       };
     } catch (error) {
       logger.error('Error getting products by category slug', {
@@ -1157,14 +1089,12 @@ class ProductService {
   }
 
   /**
-   * Get featured products with pagination and filtering
+   * Get featured products with filtering
    * @param {object} query - Query parameters
-   * @returns {object} Featured products with pagination
+   * @returns {object} Featured products
    */
   async getFeaturedProducts(query = {}) {
     const {
-      page = 1,
-      limit = 10,
       sort = 'featuredOrder',
       category,
       brand,
@@ -1230,31 +1160,18 @@ class ProductService {
       .populate('categories', 'name description')
       .populate('brandId', 'name logo')
       .sort(sortObj)
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
       .lean();
-
-    const total = await Product.countDocuments(filter);
 
     // Enrich attributes with names
     const enrichedProducts = await this.enrichAttributesWithNames(products);
 
     logger.info('Featured products retrieved', {
       count: enrichedProducts.length,
-      total,
-      page,
-      limit,
       filters: { category, brand, priceMin, priceMax, search }
     });
 
     return {
-      products: enrichedProducts,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      products: enrichedProducts
     };
   }
 
