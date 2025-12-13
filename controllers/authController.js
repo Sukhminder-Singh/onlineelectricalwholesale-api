@@ -31,7 +31,7 @@ exports.register = asyncHandler(async (req, res, next) => {
   }
 
   const user = await AuthService.registerUser(req.body);
-  await createSendToken(user, 201, res, 'User registered successfully');
+  await createSendToken(user, 201, res, 'User registered successfully. Please check your email for OTP verification.');
 });
 
 
@@ -365,4 +365,53 @@ exports.createAdmin = asyncHandler(async (req, res, next) => {
 
   const adminUser = await AuthService.createAdmin(req.body);
   await createSendToken(adminUser, 201, res, 'Admin user created successfully');
+});
+
+// @desc    Verify email with OTP
+// @route   POST /api/auth/verify-email
+// @access  Public
+exports.verifyEmail = asyncHandler(async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError('Validation failed', errors.array());
+  }
+
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    throw new ValidationError('Email and OTP are required');
+  }
+
+  const user = await AuthService.verifyEmailOtp(email, otp);
+  return ResponseService.success(res, 200, 'Email verified successfully', { 
+    user: {
+      id: user._id,
+      email: user.email,
+      emailVerified: user.emailVerified
+    }
+  });
+});
+
+// @desc    Resend email verification OTP
+// @route   POST /api/auth/resend-email-otp
+// @access  Public
+exports.resendEmailOtp = asyncHandler(async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError('Validation failed', errors.array());
+  }
+
+  const { email } = req.body;
+
+  if (!email) {
+    throw new ValidationError('Email is required');
+  }
+
+  const result = await AuthService.resendEmailOtp(email);
+  
+  if (result.sent) {
+    return ResponseService.success(res, 200, result.message);
+  } else {
+    return ResponseService.success(res, 200, result.message);
+  }
 });

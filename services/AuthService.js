@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { sendSMS } = require('../utils/sms');
+const { sendOtpEmail } = require('../utils/email');
 const { logger } = require('../middleware/logger');
 const { 
   AuthenticationError, 
@@ -519,6 +520,9 @@ class AuthService {
       throw new Error('Unable to generate unique username. Please try again.');
     }
 
+    // Generate a 6-digit numeric OTP for email verification
+    const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
+
     // Create user data
     const newUserData = {
       username,
@@ -526,10 +530,57 @@ class AuthService {
       password,
       firstName,
       lastName,
-      phoneNumber: normalizedPhone
+      phoneNumber: normalizedPhone,
+      emailVerified: false,
+      emailOtpCode: emailOtp,
+      emailOtpExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      emailOtpAttempts: 0
     };
 
-    return await User.create(newUserData);
+    const user = await User.create(newUserData);
+
+    // Send OTP email via AWS SES
+    try {
+      const fullName = `${firstName} ${lastName}`.trim();
+      
+      // Log email attempt
+      logger.info('Attempting to send OTP email', { 
+        userId: user._id, 
+        email: user.email,
+        otp: emailOtp,
+        fromEmail: process.env.AWS_SES_FROM_EMAIL || 'NOT SET'
+      });
+      
+      const emailSent = await sendOtpEmail(user.email, emailOtp, fullName);
+      
+      if (!emailSent) {
+        logger.error('Failed to send OTP email after user registration', { 
+          userId: user._id, 
+          email: user.email,
+          otp: emailOtp,
+          fromEmail: process.env.AWS_SES_FROM_EMAIL || 'NOT SET',
+          awsRegion: process.env.AWS_REGION || 'NOT SET'
+        });
+        // Don't throw error - user is created, they can request resend
+      } else {
+        logger.info('OTP email sent successfully after registration', { 
+          userId: user._id, 
+          email: user.email,
+          messageId: 'sent'
+        });
+      }
+    } catch (error) {
+      logger.error('Error sending OTP email after registration', { 
+        userId: user._id, 
+        email: user.email, 
+        error: error.message,
+        stack: error.stack,
+        fromEmail: process.env.AWS_SES_FROM_EMAIL || 'NOT SET'
+      });
+      // Don't throw error - user is created, they can request resend
+    }
+
+    return user;
   }
 
   /**
@@ -654,6 +705,111 @@ class AuthService {
     await user.save();
 
     return user;
+  }
+
+  /**
+   * Verify email OTP
+   * @param {string} email - User email
+   * @param {string} otp - 6-digit OTP code
+   * @returns {object} Updated user
+   */
+  async verifyEmailOtp(email, otp) {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      throw new ValidationError('Email is already verified');
+    }
+
+    // Validate OTP
+    const now = Date.now();
+    if (!user.emailOtpCode || !user.emailOtpExpires || now > user.emailOtpExpires) {
+      throw new AuthenticationError('OTP expired. Please request a new one.');
+    }
+
+    // Check attempt limit
+    if (user.emailOtpAttempts >= 5) {
+      throw new AuthenticationError('Too many invalid attempts. Please request a new OTP.');
+    }
+
+    // Verify OTP
+    if (String(otp) !== String(user.emailOtpCode)) {
+      user.emailOtpAttempts = (user.emailOtpAttempts || 0) + 1;
+      await user.save({ validateBeforeSave: false });
+      throw new AuthenticationError('Invalid OTP code');
+    }
+
+    // Success: mark email as verified and clear OTP fields
+    user.emailVerified = true;
+    user.emailVerifiedAt = new Date();
+    user.emailOtpCode = undefined;
+    user.emailOtpExpires = undefined;
+    user.emailOtpAttempts = 0;
+    await user.save({ validateBeforeSave: false });
+
+    logger.info('Email verified successfully', { userId: user._id, email: user.email });
+
+    return user;
+  }
+
+  /**
+   * Resend email verification OTP
+   * @param {string} email - User email
+   * @returns {object} Info about delivery
+   */
+  async resendEmailOtp(email) {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      // Don't reveal if user exists for security
+      return { sent: false, message: 'If an account with that email exists, an OTP has been sent.' };
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      throw new ValidationError('Email is already verified');
+    }
+
+    // Generate a new 6-digit numeric OTP
+    const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
+
+    // Update user with new OTP
+    user.emailOtpCode = emailOtp;
+    user.emailOtpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    user.emailOtpAttempts = 0;
+    await user.save({ validateBeforeSave: false });
+
+    // Send OTP email via AWS SES
+    try {
+      const fullName = `${user.firstName} ${user.lastName}`.trim();
+      const emailSent = await sendOtpEmail(user.email, emailOtp, fullName);
+      
+      if (!emailSent) {
+        logger.warn('Failed to send resend OTP email', { 
+          userId: user._id, 
+          email: user.email 
+        });
+        return { sent: false, message: 'Failed to send OTP email. Please try again later.' };
+      }
+
+      logger.info('Resend OTP email sent successfully', { 
+        userId: user._id, 
+        email: user.email 
+      });
+
+      return { sent: true, message: 'OTP sent to your email address.' };
+    } catch (error) {
+      logger.error('Error sending resend OTP email', { 
+        userId: user._id, 
+        email: user.email, 
+        error: error.message 
+      });
+      return { sent: false, message: 'Failed to send OTP email. Please try again later.' };
+    }
   }
 
   /**

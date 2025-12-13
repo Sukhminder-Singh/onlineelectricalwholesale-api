@@ -68,6 +68,18 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Email verification fields
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailOtpCode: String,
+  emailOtpExpires: Date,
+  emailOtpAttempts: {
+    type: Number,
+    default: 0
+  },
+  emailVerifiedAt: Date,
   // Admin deactivation/reactivation tracking
   deactivatedBy: {
     type: mongoose.Schema.Types.ObjectId,

@@ -534,7 +534,29 @@ exports.deactivateAccountValidation = [
     .withMessage('Valid user ID is required')
 ];
 
+// Validation rules for email verification
+exports.verifyEmailValidation = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('otp')
+    .notEmpty()
+    .withMessage('OTP is required')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('OTP must be 6 digits')
+    .matches(/^\d{6}$/)
+    .withMessage('OTP must contain only numbers')
+];
 
+// Validation rules for resend email OTP
+exports.resendEmailOtpValidation = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail()
+];
 
 // Validation rules for attribute creation
 exports.createAttributeValidation = [

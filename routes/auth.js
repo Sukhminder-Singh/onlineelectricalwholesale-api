@@ -20,7 +20,9 @@ const {
   createAdminValidation,
   forgotPasswordValidation,
   resetPasswordValidation,
-  deactivateAccountValidation
+  deactivateAccountValidation,
+  verifyEmailValidation,
+  resendEmailOtpValidation
 } = require('../middleware/validation');
 
 // Apply database connection check to all routes
@@ -35,6 +37,8 @@ router.post('/create-admin', registerLimiter, createAdminValidation, authControl
 router.post('/refresh-token', authController.refreshToken);
 router.post('/forgot-password', passwordResetLimiter, forgotPasswordValidation, authController.forgotPassword);
 router.put('/reset-password', passwordResetLimiter, resetPasswordValidation, authController.resetPassword);
+router.post('/verify-email', registerLimiter, verifyEmailValidation, authController.verifyEmail);
+router.post('/resend-email-otp', registerLimiter, resendEmailOtpValidation, authController.resendEmailOtp);
 router.get('/me', protect, authController.getMe);
 router.put('/update-profile', protect, updateProfileValidation, authController.updateProfile);
 router.put('/change-password', protect, changePasswordValidation, authController.changePassword);

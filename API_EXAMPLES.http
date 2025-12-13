@@ -1,0 +1,48 @@
+### Email Verification API Examples
+### Use with REST Client extension in VS Code or similar tools
+
+@baseUrl = http://localhost:5000/api/auth
+@email = test@example.com
+@otp = 123456
+
+### 1. Register User (sends OTP email automatically)
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "fullName": "John Doe",
+  "email": "{{email}}",
+  "password": "SecurePass123",
+  "phoneNumber": "+1234567890"
+}
+
+### 2. Verify Email with OTP
+POST {{baseUrl}}/verify-email
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "otp": "{{otp}}"
+}
+
+### 3. Resend Email OTP
+POST {{baseUrl}}/resend-email-otp
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### 4. Login (after email verification)
+POST {{baseUrl}}/customer/login
+Content-Type: application/json
+
+{
+  "identifier": "{{email}}",
+  "password": "SecurePass123"
+}
+
+### 5. Get Current User (requires authentication)
+GET {{baseUrl}}/me
+Authorization: Bearer YOUR_ACCESS_TOKEN_HERE
+
