@@ -234,7 +234,7 @@ class AuthService {
 
     // Handle login OTP verification (existing customer)
     const identifier = identifierOrData;
-    const { conditions } = this.buildUserSearchConditions(identifier);
+    const { conditions, isPhone } = this.buildUserSearchConditions(identifier);
     const user = await User.findOne({ $or: conditions });
 
     if (!user) {
@@ -249,27 +249,60 @@ class AuthService {
       throw new AuthenticationError('Your account has been deactivated. Please contact support.');
     }
 
-    // Validate OTP
     const now = Date.now();
-    if (!user.loginOtpCode || !user.loginOtpExpires || now > user.loginOtpExpires) {
-      throw new AuthenticationError('Code expired. Please request a new one.');
+    let otpVerified = false;
+
+    // Check if identifier is an email and if there's an email OTP to verify
+    const isEmail = !isPhone && identifier.includes('@') && identifier.toLowerCase() === user.email?.toLowerCase();
+    
+    // If identifier is an email and email is not yet verified, check email OTP first
+    if (isEmail && !user.emailVerified && user.emailOtpCode && user.emailOtpExpires && now <= user.emailOtpExpires) {
+      // Verify email OTP
+      if (user.emailOtpAttempts >= 5) {
+        throw new AuthenticationError('Too many invalid email OTP attempts. Please request a new one.');
+      }
+
+      if (String(otp) === String(user.emailOtpCode)) {
+        // Email OTP verified - mark email as verified
+        user.emailVerified = true;
+        user.emailVerifiedAt = new Date();
+        user.emailOtpCode = undefined;
+        user.emailOtpExpires = undefined;
+        user.emailOtpAttempts = 0;
+        otpVerified = true;
+        logger.info('Email verified via OTP during login', { userId: user._id, email: user.email });
+      } else {
+        user.emailOtpAttempts = (user.emailOtpAttempts || 0) + 1;
+        await user.save({ validateBeforeSave: false });
+        throw new AuthenticationError('Invalid email verification code');
+      }
     }
 
-    // Basic attempt throttling
-    if (user.loginOtpAttempts >= 5) {
-      throw new AuthenticationError('Too many invalid attempts. Request a new code.');
+    // If not email OTP, check for login OTP (phone-based login)
+    if (!otpVerified) {
+      if (!user.loginOtpCode || !user.loginOtpExpires || now > user.loginOtpExpires) {
+        throw new AuthenticationError('Code expired. Please request a new one.');
+      }
+
+      // Basic attempt throttling
+      if (user.loginOtpAttempts >= 5) {
+        throw new AuthenticationError('Too many invalid attempts. Request a new code.');
+      }
+
+      if (String(otp) !== String(user.loginOtpCode)) {
+        user.loginOtpAttempts = (user.loginOtpAttempts || 0) + 1;
+        await user.save({ validateBeforeSave: false });
+        throw new AuthenticationError('Invalid code');
+      }
+
+      // Login OTP verified - clear login OTP fields
+      user.loginOtpCode = undefined;
+      user.loginOtpExpires = undefined;
+      user.loginOtpAttempts = 0;
+      otpVerified = true;
     }
 
-    if (String(otp) !== String(user.loginOtpCode)) {
-      user.loginOtpAttempts = (user.loginOtpAttempts || 0) + 1;
-      await user.save({ validateBeforeSave: false });
-      throw new AuthenticationError('Invalid code');
-    }
-
-    // Success: clear OTP fields and update last login
-    user.loginOtpCode = undefined;
-    user.loginOtpExpires = undefined;
-    user.loginOtpAttempts = 0;
+    // Success: update last login
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
 
