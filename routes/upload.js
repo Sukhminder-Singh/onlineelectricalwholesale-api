@@ -1,43 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { protect, adminOnly } = require('../middleware/auth');
 const checkDBConnection = require('../middleware/dbConnection');
+const createUploadMiddleware = require('../middleware/s3');
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../uploads');
-    // Create uploads directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename with timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  // Accept only image files
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed!'), false);
-  }
-};
-
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  }
+// Create upload middleware for general uploads folder in S3
+const upload = createUploadMiddleware('uploads', {
+  allowedMimeTypes: ['image/*'],
+  maxFileSize: 5 * 1024 * 1024 // 5MB limit
 });
 
 // Apply database connection check to all routes
@@ -47,7 +17,8 @@ router.use(checkDBConnection);
 router.post('/image', 
   protect,
   adminOnly,
-  upload.single('image'), 
+  upload.single('image'),
+  upload.errorHandler,
   (req, res) => {
   try {
     if (!req.file) {
@@ -57,18 +28,20 @@ router.post('/image',
       });
     }
 
-    // Generate the URL for the uploaded file
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    // Get the S3 URL from the file object (multer-s3 provides location)
+    const imageUrl = req.file.location || req.file.key;
 
     res.json({
       success: true,
       data: {
-        filename: req.file.filename,
+        filename: req.file.key || req.file.filename,
         originalName: req.file.originalname,
         url: imageUrl,
-        size: req.file.size
+        size: req.file.size,
+        bucket: req.file.bucket,
+        location: req.file.location
       },
-      message: 'Image uploaded successfully'
+      message: 'Image uploaded successfully to S3'
     });
   } catch (error) {
     res.status(500).json({ 
@@ -82,7 +55,8 @@ router.post('/image',
 router.post('/images', 
   protect,
   adminOnly,
-  upload.array('images', 10), 
+  upload.array('images', 10),
+  upload.errorHandler,
   (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -93,16 +67,18 @@ router.post('/images',
     }
 
     const uploadedFiles = req.files.map(file => ({
-      filename: file.filename,
+      filename: file.key || file.filename,
       originalName: file.originalname,
-      url: `${req.protocol}://${req.get('host')}/uploads/${file.filename}`,
-      size: file.size
+      url: file.location || file.key,
+      size: file.size,
+      bucket: file.bucket,
+      location: file.location
     }));
 
     res.json({
       success: true,
       data: uploadedFiles,
-      message: 'Images uploaded successfully'
+      message: 'Images uploaded successfully to S3'
     });
   } catch (error) {
     res.status(500).json({ 

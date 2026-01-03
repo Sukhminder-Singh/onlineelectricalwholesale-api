@@ -53,26 +53,38 @@ if (hasS3Config) {
     s3Client = null;
   }
 } else {
+  console.error('❌ S3 configuration is required. Please configure AWS S3 credentials.');
   if (process.env.NODE_ENV === 'development') {
-    console.warn('⚠️ S3 configuration incomplete - file uploads will use local storage');
+    console.error('Required environment variables:');
+    console.error('- AWS_ACCESS_KEY_ID');
+    console.error('- AWS_SECRET_ACCESS_KEY');
+    console.error('- AWS_REGION');
+    console.error('- AWS_BUCKET_NAME');
   }
 }
 
 /**
  * Get the full S3 URL for a file
  * @param {string} filename - The filename to get URL for
- * @returns {string} Full S3 URL or local URL
+ * @returns {string} Full S3 URL
+ * @throws {Error} If S3 is not configured
  */
 const getFileUrl = (filename) => {
   if (!filename) return '';
   
-  if (hasS3Config && process.env.CLOUDFRONT_DOMAIN) {
+  if (!hasS3Config) {
+    throw new Error('S3 configuration is required. Please configure AWS S3 credentials.');
+  }
+  
+  // If it's already a full URL, return as is
+  if (filename.startsWith('http://') || filename.startsWith('https://')) {
+    return filename;
+  }
+  
+  if (process.env.CLOUDFRONT_DOMAIN) {
     return `${process.env.CLOUDFRONT_DOMAIN}/${filename}`;
-  } else if (hasS3Config) {
-    return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${filename}`;
   } else {
-    // Fallback to local storage URL
-    return `/uploads/${filename}`;
+    return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${filename}`;
   }
 };
 
