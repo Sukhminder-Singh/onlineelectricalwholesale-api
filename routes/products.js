@@ -12,8 +12,12 @@ const {
   handleValidationErrors 
 } = require('../middleware/validation');
 
-// Create upload middleware for product images
-const upload = createUploadMiddleware('product');
+// Create upload middleware for product images and PDFs
+// Images go to 'product' folder, PDFs (specificationsFile) go to 'pdf' folder
+const upload = createUploadMiddleware('product', {
+  allowedMimeTypes: ['image/*', 'application/pdf'], // Allow both images and PDFs
+  maxFileSize: process.env.MAX_FILE_SIZE || 10 * 1024 * 1024 // 10MB limit (larger for PDFs)
+});
 
 // Public routes
 // Get all products with filtering and pagination

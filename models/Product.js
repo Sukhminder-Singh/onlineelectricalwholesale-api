@@ -121,6 +121,10 @@ const ProductSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isDeliveryAvailable: {
+    type: Boolean,
+    default: false
+  },
   
   // Descriptions
   shortDescription: {

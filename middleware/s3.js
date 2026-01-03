@@ -3,63 +3,105 @@ const multer = require('multer');
 const multerS3 = require('multer-s3');
 const path = require('path');
 
-// Create a function to generate the multer upload middleware with dynamic folder
-const createUploadMiddleware = (folderName) => {
-// Check if S3 configuration is available
-if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_REGION || !process.env.AWS_BUCKET_NAME) {
-  console.error('❌ S3 configuration missing. Please check your environment variables:');
-  console.error('- AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
-  console.error('- AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
-  console.error('- AWS_REGION:', process.env.AWS_REGION || 'NOT SET');
-  console.error('- AWS_BUCKET_NAME:', process.env.AWS_BUCKET_NAME || 'NOT SET');
-  throw new Error('S3 configuration is incomplete. Please check your environment variables.');
-}
+// Create a function to generate the multer upload middleware with dynamic folder and file type options
+const createUploadMiddleware = (folderName, options = {}) => {
+  // Default options
+  const {
+    allowedMimeTypes = ['image/*'], // Default: only images
+    maxFileSize = process.env.MAX_FILE_SIZE || 5 * 1024 * 1024, // Default: 5MB
+    customFolder = null // If provided, use this folder name instead of folderName
+  } = options;
 
-const s3 = new S3Client({
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  },
-  region: process.env.AWS_REGION,
-  // Let AWS SDK automatically determine the correct endpoint based on region
-  // Explicit endpoint can cause issues if bucket is in a different region
-});
-
-// Configure multer for S3
-const upload = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.AWS_BUCKET_NAME,
-    metadata: function (req, file, cb) {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: function (req, file, cb) {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      // Use the provided folder name
-      cb(null, `${folderName}/${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
-    },
-    contentType: multerS3.AUTO_CONTENT_TYPE
-  }),
-  fileFilter: (req, file, cb) => {
-    // Accept only image files
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed!'), false);
-    }
-  },
-  limits: {
-    fileSize: process.env.MAX_FILE_SIZE || 5 * 1024 * 1024 // 5MB limit
+  // Check if S3 configuration is available
+  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_REGION || !process.env.AWS_BUCKET_NAME) {
+    console.error('❌ S3 configuration missing. Please check your environment variables:');
+    console.error('- AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
+    console.error('- AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
+    console.error('- AWS_REGION:', process.env.AWS_REGION || 'NOT SET');
+    console.error('- AWS_BUCKET_NAME:', process.env.AWS_BUCKET_NAME || 'NOT SET');
+    throw new Error('S3 configuration is incomplete. Please check your environment variables.');
   }
-});
+
+  const s3 = new S3Client({
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    },
+    region: process.env.AWS_REGION,
+    // Let AWS SDK automatically determine the correct endpoint based on region
+    // Explicit endpoint can cause issues if bucket is in a different region
+  });
+
+  // Helper function to check if mime type matches allowed types
+  const isAllowedMimeType = (mimeType) => {
+    return allowedMimeTypes.some(allowed => {
+      if (allowed.endsWith('/*')) {
+        // Pattern match (e.g., 'image/*' matches 'image/jpeg', 'image/png', etc.)
+        const baseType = allowed.split('/')[0];
+        return mimeType.startsWith(`${baseType}/`);
+      }
+      return mimeType === allowed;
+    });
+  };
+
+  // Determine the folder to use
+  const uploadFolder = customFolder || folderName;
+
+  // Configure multer for S3
+  const upload = multer({
+    storage: multerS3({
+      s3: s3,
+      bucket: process.env.AWS_BUCKET_NAME,
+      metadata: function (req, file, cb) {
+        cb(null, { fieldName: file.fieldname });
+      },
+      key: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        
+        // Special handling for specificationsFile - upload to pdf folder
+        let targetFolder = uploadFolder;
+        if (file.fieldname === 'specificationsFile') {
+          targetFolder = 'pdf';
+        }
+        
+        // Use the determined folder name
+        cb(null, `${targetFolder}/${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
+      },
+      contentType: multerS3.AUTO_CONTENT_TYPE
+    }),
+    fileFilter: (req, file, cb) => {
+      // Special handling for specificationsFile - only allow PDFs
+      if (file.fieldname === 'specificationsFile') {
+        if (file.mimetype === 'application/pdf') {
+          cb(null, true);
+        } else {
+          cb(new Error('specificationsFile must be a PDF file'), false);
+        }
+        return;
+      }
+      
+      // For other fields (images), only allow images
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed for image fields'), false);
+      }
+    },
+    limits: {
+      // Use the larger of maxFileSize or PDF size limit to accommodate both images and PDFs
+      fileSize: Math.max(maxFileSize, process.env.MAX_PDF_SIZE || 10 * 1024 * 1024)
+    }
+  });
 
 // Add error handling middleware
 upload.errorHandler = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
+      const maxSize = process.env.MAX_PDF_SIZE || 10 * 1024 * 1024;
+      const maxSizeMB = Math.round(maxSize / (1024 * 1024));
       return res.status(400).json({
         success: false,
-        message: 'File too large. Maximum size is 5MB.',
+        message: `File too large. Maximum size is ${maxSizeMB}MB.`,
         error: 'FILE_TOO_LARGE'
       });
     }
@@ -77,6 +119,22 @@ upload.errorHandler = (error, req, res, next) => {
         error: 'UNEXPECTED_FIELD'
       });
     }
+  }
+  
+  if (error.message && error.message.includes('Invalid file type')) {
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+      error: 'INVALID_FILE_TYPE'
+    });
+  }
+  
+  if (error.message && error.message.includes('specificationsFile must be a PDF')) {
+    return res.status(400).json({
+      success: false,
+      message: 'specificationsFile must be a PDF file.',
+      error: 'INVALID_FILE_TYPE'
+    });
   }
   
   if (error.message === 'Only image files are allowed!') {

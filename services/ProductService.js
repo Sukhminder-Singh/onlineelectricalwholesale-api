@@ -79,6 +79,23 @@ class ProductService {
   }
 
   /**
+   * Helper function to normalize boolean values from form data
+   * @param {any} value - Value to normalize
+   * @returns {boolean|null} Normalized boolean or null if not a boolean field
+   */
+  normalizeBoolean(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase().trim();
+      if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+      if (lower === 'false' || lower === '0' || lower === 'no' || lower === '') return false;
+    }
+    if (typeof value === 'number') return value !== 0;
+    return null;
+  }
+
+  /**
    * Helper function to process product data
    * @param {object} data - Request body data
    * @returns {object} Processed product data
@@ -342,11 +359,21 @@ class ProductService {
     // Process JSON fields
     const processedData = this.processProductData(productData);
 
+    // Normalize boolean fields (handle string booleans from form data)
+    const normalizedBooleans = {};
+    if (productData.isDeliveryAvailable !== undefined) {
+      const normalized = this.normalizeBoolean(productData.isDeliveryAvailable);
+      if (normalized !== null) {
+        normalizedBooleans.isDeliveryAvailable = normalized;
+      }
+    }
+
     // Create product with processed data
     const finalProductData = {
       ...productData,
       ...fileData,
       ...processedData,
+      ...normalizedBooleans,
       sku: productData.sku.toUpperCase(),
       createdBy: userId,
       updatedBy: userId
@@ -490,7 +517,7 @@ class ProductService {
    * Get product by ID
    * @param {string} productId - Product ID
    * @param {boolean} includeDeleted - Include deleted products
-   * @returns {object} Product object
+   * @returns {object} Product object with related products
    */
   async getProductById(productId, includeDeleted = false) {
     if (!mongoose.Types.ObjectId.isValid(productId)) {
@@ -514,7 +541,81 @@ class ProductService {
     }
 
     // Enrich attributes with names
-    return await this.enrichAttributesWithNames(product);
+    const enrichedProduct = await this.enrichAttributesWithNames(product);
+
+    // Get related products from the same category(ies)
+    // Fetch related products if product has categories (regardless of product status)
+    if (product.categories && product.categories.length > 0) {
+      // Extract category IDs properly (handle both populated objects and ObjectIds)
+      const categoryIds = product.categories.map(cat => {
+        let categoryId = null;
+        
+        // Handle populated category objects
+        if (typeof cat === 'object' && cat !== null) {
+          if (cat._id) {
+            categoryId = cat._id;
+          } else if (cat.toString) {
+            // It's already an ObjectId
+            categoryId = cat;
+          }
+        } else {
+          // It's a string or ObjectId directly
+          categoryId = cat;
+        }
+        
+        // Convert to ObjectId if it's a valid string
+        if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+          // If it's already an ObjectId instance, return as is, otherwise convert
+          if (categoryId instanceof mongoose.Types.ObjectId) {
+            return categoryId;
+          }
+          return new mongoose.Types.ObjectId(categoryId);
+        }
+        
+        return categoryId;
+      }).filter(id => id && mongoose.Types.ObjectId.isValid(id)); // Remove any null/undefined/invalid values
+
+      logger.info('Fetching related products', {
+        productId,
+        categoryIds: categoryIds.map(id => id.toString()),
+        categoryCount: categoryIds.length
+      });
+
+      // Find products that share at least one category with the current product
+      const relatedProducts = await Product.find({
+        _id: { $ne: new mongoose.Types.ObjectId(productId) }, // Exclude current product
+        categories: { $in: categoryIds }, // Products with matching category(ies)
+        status: 'active', // Only active products
+        isPublished: true, // Only published products
+        deletedAt: { $exists: false } // Not deleted
+      })
+        .select('productName sku price comparePrice mainImage shortDescription status isPublished brandId categories')
+        .populate('brandId', 'name description')
+        .populate('categories', 'name description')
+        .sort('-createdAt') // Sort by newest first
+        .limit(5) // Limit to 5 products
+        .lean();
+
+      logger.info('Related products found', {
+        productId,
+        relatedProductsCount: relatedProducts.length
+      });
+
+      // Enrich related products attributes with names
+      const enrichedRelatedProducts = await this.enrichAttributesWithNames(relatedProducts);
+
+      // Add related products to the response
+      enrichedProduct.relatedProducts = enrichedRelatedProducts;
+    } else {
+      // If product has no categories, return empty related products
+      enrichedProduct.relatedProducts = [];
+      logger.info('No related products - product has no categories', {
+        productId,
+        hasCategories: !!(product.categories && product.categories.length > 0)
+      });
+    }
+
+    return enrichedProduct;
   }
 
   /**
@@ -592,11 +693,21 @@ class ProductService {
     // Process JSON fields using the helper method
     const processedData = this.processProductData(updateData);
 
+    // Normalize boolean fields (handle string booleans from form data)
+    const normalizedBooleans = {};
+    if (updateData.isDeliveryAvailable !== undefined) {
+      const normalized = this.normalizeBoolean(updateData.isDeliveryAvailable);
+      if (normalized !== null) {
+        normalizedBooleans.isDeliveryAvailable = normalized;
+      }
+    }
+
     // Build update object
     const finalUpdateData = {
       ...updateData,
       ...fileData,
       ...processedData,
+      ...normalizedBooleans,
       updatedBy: userId,
       updatedAt: new Date()
     };
