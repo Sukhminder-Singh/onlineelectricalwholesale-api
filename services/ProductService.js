@@ -389,7 +389,7 @@ class ProductService {
 
     // Populate the created product
     await product.populate([
-      { path: 'categories', select: 'name description' },
+      { path: 'categories', select: 'name description slug' },
       { path: 'brandId', select: 'name description' },
       { path: 'createdBy', select: 'firstName lastName username' },
       { path: 'updatedBy', select: 'firstName lastName username' }
@@ -499,7 +499,7 @@ class ProductService {
     // Execute query with population
     const products = await Product.find(filter)
       .populate('brandId', 'name description')
-      .populate('categories', 'name description')
+      .populate('categories', 'name description slug')
       .populate('createdBy', 'firstName lastName username')
       .populate('updatedBy', 'firstName lastName username')
       .sort(sort)
@@ -531,7 +531,7 @@ class ProductService {
 
     const product = await Product.findOne(filter)
       .populate('brandId', 'name description')
-      .populate('categories', 'name description')
+      .populate('categories', 'name description slug')
       .populate('createdBy', 'firstName lastName username')
       .populate('updatedBy', 'firstName lastName username')
       .lean();
@@ -591,7 +591,7 @@ class ProductService {
       })
         .select('productName sku price comparePrice mainImage shortDescription status isPublished brandId categories')
         .populate('brandId', 'name description')
-        .populate('categories', 'name description')
+        .populate('categories', 'name description slug')
         .sort('-createdAt') // Sort by newest first
         .limit(5) // Limit to 5 products
         .lean();
@@ -726,7 +726,7 @@ class ProductService {
       }
     ).populate([
       { path: 'brandId', select: 'name description' },
-      { path: 'categories', select: 'name description' },
+      { path: 'categories', select: 'name description slug' },
       { path: 'createdBy', select: 'firstName lastName username' },
       { path: 'updatedBy', select: 'firstName lastName username' }
     ]);
@@ -950,7 +950,7 @@ class ProductService {
 
     const products = await Product.find(filter)
       .populate('brandId', 'name description')
-      .populate('categories', 'name description')
+      .populate('categories', 'name description slug')
       .sort(sort)
       .lean();
 
@@ -1180,7 +1180,7 @@ class ProductService {
       { new: true, runValidators: true }
     ).populate([
       { path: 'brandId', select: 'name description' },
-      { path: 'categories', select: 'name description' }
+      { path: 'categories', select: 'name description slug' }
     ]);
 
     if (!product) {
@@ -1268,7 +1268,7 @@ class ProductService {
 
     // Execute query
     const products = await Product.find(filter)
-      .populate('categories', 'name description')
+      .populate('categories', 'name description slug')
       .populate('brandId', 'name logo')
       .sort(sortObj)
       .lean();
@@ -1311,7 +1311,7 @@ class ProductService {
       updateData,
       { new: true, runValidators: true }
     ).populate([
-      { path: 'categories', select: 'name description' },
+      { path: 'categories', select: 'name description slug' },
       { path: 'brandId', select: 'name logo' }
     ]);
 
@@ -1349,7 +1349,7 @@ class ProductService {
       },
       { new: true, runValidators: true }
     ).populate([
-      { path: 'categories', select: 'name description' },
+      { path: 'categories', select: 'name description slug' },
       { path: 'brandId', select: 'name logo' }
     ]);
 
@@ -1384,7 +1384,7 @@ class ProductService {
       },
       { new: true, runValidators: true }
     ).populate([
-      { path: 'categories', select: 'name description' },
+      { path: 'categories', select: 'name description slug' },
       { path: 'brandId', select: 'name logo' }
     ]);
 
